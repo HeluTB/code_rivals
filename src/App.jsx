@@ -17,11 +17,10 @@ const getStartOfWeek = () => {
   return d;
 };
 
-// Fixed: More robust check for "this week" points
 const isDateInCurrentWeek = (dateStr) => {
+  if (!dateStr) return false;
   const date = new Date(dateStr);
   const startOfWeek = getStartOfWeek();
-  // Set to next Monday morning for boundary
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(endOfWeek.getDate() + 7);
   
@@ -34,6 +33,7 @@ const mockFetchUserProfile = async (handle, platform) => {
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve({
+        id: Date.now(),
         username: handle, 
         handle: handle,
         platform: platform,
@@ -96,8 +96,6 @@ const PlatformIcon = ({ platform }) => {
   }
 };
 
-// --- VIEWS ---
-
 const WeeklyLeaderboard = ({ users }) => {
   const rankedUsers = useMemo(() => {
     return users.map(user => {
@@ -145,6 +143,7 @@ const WeeklyLeaderboard = ({ users }) => {
 };
 
 const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
+  if (!user) return null;
   const [timeframe, setTimeframe] = useState('Month');
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ username: user.username, handle: user.handle });
@@ -156,7 +155,9 @@ const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
     if (timeframe === 'Month') cutoff.setDate(now.getDate() - 30);
     if (timeframe === 'Year') cutoff.setDate(now.getDate() - 365);
 
-    return user.history.filter(h => new Date(h.date) >= cutoff).sort((a, b) => new Date(b.date) - new Date(a.date));
+    return (user.history || [])
+      .filter(h => new Date(h.date) >= cutoff)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [user.history, timeframe]);
 
   const saveProfile = () => {
@@ -309,19 +310,33 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
   const [selectedUserId, setSelectedUserId] = useState(null);
-  const [users, setUsers] = useState([
-    {
-      id: 1,
-      username: 'YourName',
-      handle: 'dev_user',
-      platform: 'LeetCode',
-      totalSolved: 10,
-      streak: 1,
-      history: [{ date: new Date().toISOString().split('T')[0], count: 2 }], 
-      manualLogs: []
-    }
-  ]);
   
+  // Load from localStorage
+  const [users, setUsers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('code_rivals_users');
+      return saved ? JSON.parse(saved) : [
+        {
+          id: 1,
+          username: 'YourName',
+          handle: 'dev_user',
+          platform: 'LeetCode',
+          totalSolved: 10,
+          streak: 1,
+          history: [{ date: new Date().toISOString().split('T')[0], count: 2 }], 
+          manualLogs: []
+        }
+      ];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Save to localStorage
+  useEffect(() => {
+    localStorage.setItem('code_rivals_users', JSON.stringify(users));
+  }, [users]);
+
   const [isAdding, setIsAdding] = useState(false);
   const [newUserHandle, setNewUserHandle] = useState('');
   const [newUserPlatform, setNewUserPlatform] = useState('LeetCode');
@@ -341,7 +356,7 @@ export default function App() {
     setIsLoading(true);
     try {
       const data = await mockFetchUserProfile(newUserHandle, newUserPlatform);
-      setUsers(prev => [...prev, { ...data, id: Date.now() }]);
+      setUsers(prev => [...prev, data]);
       setNewUserHandle('');
       setIsAdding(false);
     } catch (err) { alert("Error syncing"); } 
@@ -361,7 +376,7 @@ export default function App() {
           if (existingIdx >= 0) {
             newHistory[existingIdx] = { 
               ...newHistory[existingIdx], 
-              count: newHistory[existingIdx].count + 1 
+              count: (newHistory[existingIdx].count || 0) + 1 
             };
           } else {
             newHistory.push({ date: today, count: 1 });
@@ -385,7 +400,6 @@ export default function App() {
   return (
     <div className={`min-h-screen transition-all duration-500 font-sans ${darkMode ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
       
-      {/* Nav */}
       <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveView('dashboard')}>
