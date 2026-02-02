@@ -102,7 +102,10 @@ const isDateInCurrentWeek = (dateStr) => {
 // --- COMPONENTS ---
 
 const Card = ({ children, className = "", onClick }) => (
-  <div onClick={onClick} className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all ${onClick ? 'cursor-pointer hover:shadow-md hover:border-emerald-500/30' : ''} ${className}`}>
+  <div 
+    onClick={onClick} 
+    className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all ${onClick ? 'cursor-pointer hover:shadow-md hover:border-emerald-500/30' : ''} ${className}`}
+  >
     {children}
   </div>
 );
@@ -127,6 +130,128 @@ const PlatformIcon = ({ platform }) => {
     case 'HackerRank': return <Code size={14} />;
     default: return <Activity size={14} />; 
   }
+};
+
+// --- PROFILE VIEW COMPONENT ---
+
+const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
+  if (!user) return null;
+  const [timeframe, setTimeframe] = useState('Month');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ username: user.username, handle: user.handle });
+
+  const filteredHistory = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date();
+    if (timeframe === 'Week') cutoff.setDate(now.getDate() - 7);
+    if (timeframe === 'Month') cutoff.setDate(now.getDate() - 30);
+    if (timeframe === 'Year') cutoff.setDate(now.getDate() - 365);
+
+    return (user.history || [])
+      .filter(h => new Date(h.date) >= cutoff)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [user.history, timeframe]);
+
+  const saveProfile = () => {
+    onUpdateUser(user.id, { username: editForm.username, handle: editForm.handle });
+    setIsEditing(false);
+  };
+
+  const weeklyScore = useMemo(() => {
+    return (user.history || []).filter(h => isDateInCurrentWeek(h.date)).reduce((a, b) => a + b.count, 0);
+  }, [user.history]);
+
+  return (
+    <div className="animate-in slide-in-from-bottom-4 fade-in duration-500">
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-emerald-500 mb-6 transition-colors text-sm font-medium">
+        <ArrowLeft size={16} /> Dashboard
+      </button>
+
+      <Card className="p-6 mb-6">
+        <div className="flex flex-col md:flex-row justify-between gap-6">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500 text-white flex items-center justify-center text-2xl font-bold shadow-lg shadow-emerald-500/20">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input 
+                    className="block text-xl font-bold bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-1 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={editForm.username}
+                    onChange={(e) => setEditForm({...editForm, username: e.target.value})}
+                    placeholder="Display Name"
+                  />
+                  <input 
+                    className="block text-sm font-mono bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-1 text-emerald-500 outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={editForm.handle}
+                    onChange={(e) => setEditForm({...editForm, handle: e.target.value})}
+                    placeholder="Platform Handle"
+                  />
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-2xl font-bold text-slate-800 dark:text-white">{user.username}</h1>
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <PlatformIcon platform={user.platform} /> 
+                    <span className="font-mono text-sm">@{user.handle}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <Button onClick={saveProfile} size="sm">Save Changes</Button>
+            ) : (
+              <Button onClick={() => setIsEditing(true)} variant="secondary" size="sm"><Edit2 size={14}/> Edit</Button>
+            )}
+            <Button onClick={() => onDeleteUser(user.id)} variant="danger" size="sm" className="bg-red-500/10"><Trash2 size={14}/></Button>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {[
+          { label: 'Total Solved', val: user.totalSolved, color: 'text-slate-800 dark:text-white' },
+          { label: 'Weekly Score', val: weeklyScore, color: 'text-emerald-500' },
+          { label: 'Streak', val: user.streak || 0, color: 'text-orange-500' },
+          { label: 'Platform', val: user.platform, color: 'text-slate-400', isLabel: true },
+        ].map((s, i) => (
+          <Card key={i} className="p-4 text-center">
+            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1">{s.label}</div>
+            <div className={`text-2xl font-black ${s.color}`}>{s.val}</div>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-8">
+          <h3 className="font-bold flex items-center gap-2"><CalendarIcon size={18} className="text-emerald-500"/> Activity Log</h3>
+          <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+            {['Week', 'Month', 'Year'].map(t => (
+              <button key={t} onClick={() => setTimeframe(t)} className={`px-4 py-1.5 text-xs rounded-md transition-all ${timeframe === t ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-500 font-bold' : 'text-slate-500'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3">
+          {filteredHistory.length === 0 ? <div className="py-12 text-center text-slate-500 text-sm">No activity recorded for this period.</div> : 
+            filteredHistory.map((h, i) => (
+              <div key={i} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-4">
+                  <div className="text-xs font-mono text-slate-500">{h.date}</div>
+                  <div className="font-bold text-sm">Solved {h.count} problem{h.count > 1 ? 's' : ''}</div>
+                </div>
+                {h.count > 2 && <Award size={16} className="text-amber-500" />}
+              </div>
+            ))
+          }
+        </div>
+      </Card>
+    </div>
+  );
 };
 
 // --- MAIN APP ---
@@ -200,6 +325,15 @@ export default function App() {
       alert("Could not fetch data for this handle. Please check the spelling.");
     }
     setIsLoading(false);
+  };
+
+  const updateUser = (id, updates) => {
+    setUsers(users.map(u => u.id === id ? { ...u, ...updates } : u));
+  };
+
+  const deleteUser = (id) => {
+    setUsers(users.filter(u => u.id !== id));
+    setActiveView('dashboard');
   };
 
   const rankedUsers = useMemo(() => {
@@ -283,26 +417,49 @@ export default function App() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
               {users.map(u => (
-                <Card key={u.id} className="p-5">
+                <Card 
+                  key={u.id} 
+                  className="p-5 cursor-pointer hover:border-emerald-500/50"
+                  onClick={() => { setSelectedUserId(u.id); setActiveView('profile'); }}
+                >
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center font-bold">{u.username[0]}</div>
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center font-bold">{u.username[0].toUpperCase()}</div>
                       <div>
                         <h4 className="font-bold">{u.username}</h4>
                         <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tight flex items-center gap-1"><PlatformIcon platform={u.platform} /> {u.platform}</div>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setUsers(prev => prev.filter(user => user.id !== u.id))}><Trash2 size={14}/></Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={(e) => { e.stopPropagation(); setUsers(prev => prev.filter(user => user.id !== u.id)); }}
+                    >
+                      <Trash2 size={14}/>
+                    </Button>
                   </div>
                   <div className="flex justify-between items-end">
                     <div className="text-xs text-slate-400">Total Solved: <span className="font-bold text-slate-600 dark:text-slate-200">{u.totalSolved}</span></div>
-                    <Button variant="outline" size="sm" onClick={() => syncUser(u.id)}><RefreshCw size={12} /> Sync</Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={(e) => { e.stopPropagation(); syncUser(u.id); }}
+                    >
+                      <RefreshCw size={12} /> Sync
+                    </Button>
                   </div>
                 </Card>
               ))}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <ProfileView 
+            user={users.find(u => u.id === selectedUserId)} 
+            onBack={() => setActiveView('dashboard')} 
+            onUpdateUser={updateUser}
+            onDeleteUser={deleteUser}
+          />
+        )}
       </main>
     </div>
   );
