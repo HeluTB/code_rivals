@@ -8,8 +8,14 @@ import {
 // --- API UTILITIES ---
 
 // Helper: Convert UNIX timestamp to Local YYYY-MM-DD
+// Added safety check to prevent crashes on invalid dates
 const getLocalDate = (timestamp) => {
-  return new Date(timestamp * 1000).toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD
+  if (!timestamp || isNaN(timestamp)) return new Date().toLocaleDateString('en-CA');
+  try {
+    return new Date(timestamp * 1000).toLocaleDateString('en-CA'); 
+  } catch (e) {
+    return new Date().toLocaleDateString('en-CA');
+  }
 };
 
 // 1. Codeforces Fetcher
@@ -19,8 +25,6 @@ const fetchCodeforcesData = async (handle) => {
     const data = await response.json();
     if (data.status !== "OK") throw new Error("User not found");
     
-    // Map to store unique problems solved per day
-    // Key: "YYYY-MM-DD", Value: Set(problemIds)
     const dailySolved = {};
     const totalUnique = new Set();
     
@@ -29,16 +33,17 @@ const fetchCodeforcesData = async (handle) => {
         const problemId = `${sub.problem.contestId}-${sub.problem.index}`;
         totalUnique.add(problemId);
         
-        const date = getLocalDate(sub.creationTimeSeconds);
-        
-        if (!dailySolved[date]) {
-          dailySolved[date] = new Set();
+        // Safety check for creationTimeSeconds
+        if (sub.creationTimeSeconds) {
+            const date = getLocalDate(sub.creationTimeSeconds);
+            if (!dailySolved[date]) {
+              dailySolved[date] = new Set();
+            }
+            dailySolved[date].add(problemId);
         }
-        dailySolved[date].add(problemId);
       }
     });
 
-    // Convert Set sizes to counts
     const history = Object.keys(dailySolved).map(date => ({
       date,
       count: dailySolved[date].size
@@ -54,18 +59,14 @@ const fetchCodeforcesData = async (handle) => {
   }
 };
 
-// 2. LeetCode Fetcher (Using Stats API Wrapper)
+// 2. LeetCode Fetcher
 const fetchLeetCodeData = async (handle) => {
   try {
-    // This API wrapper handles the complex GraphQL headers for us
     const response = await fetch(`https://leetcode-stats-api.herokuapp.com/${handle}`);
     const data = await response.json();
 
     if (data.status !== "success") throw new Error("User not found or API error");
 
-    // submissionCalendar is a map of { timestamp: count }
-    // Note: LeetCode's calendar counts submissions, not strictly unique problems per day via this endpoint,
-    // but it's the best public data available without full auth.
     const history = Object.entries(data.submissionCalendar || {}).map(([ts, count]) => ({
       date: getLocalDate(parseInt(ts)),
       count: count
@@ -81,19 +82,16 @@ const fetchLeetCodeData = async (handle) => {
   }
 };
 
-// Helper to extract handle from URL or raw string
 const extractHandle = (input, platform) => {
   if (!input) return '';
   const cleanInput = input.trim();
   
   if (platform === 'LeetCode') {
-    // Match leetcode.com/u/handle or leetcode.com/handle
     const match = cleanInput.match(/leetcode\.com\/(?:u\/)?([^\/]+)/);
     return match ? match[1] : cleanInput;
   }
   
   if (platform === 'Codeforces') {
-    // Match codeforces.com/profile/handle
     const match = cleanInput.match(/codeforces\.com\/profile\/([^\/]+)/);
     return match ? match[1] : cleanInput;
   }
@@ -115,7 +113,6 @@ const getStartOfWeek = () => {
 
 const isDateInCurrentWeek = (dateStr) => {
   if (!dateStr) return false;
-  // Parse YYYY-MM-DD strictly as local time to avoid timezone shifts
   const [y, m, d] = dateStr.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   
@@ -159,20 +156,20 @@ const PlatformBadge = ({ type }) => {
 // --- VIEWS ---
 
 const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
+  // HOOKS MUST BE AT THE TOP - Unconditional
   const [timeframe, setTimeframe] = useState('Month');
   const [isEditing, setIsEditing] = useState(false);
   
-  // Handles State
-  const [editName, setEditName] = useState(user.username);
-  const [lcHandle, setLcHandle] = useState(user.handles?.leetcode || '');
-  const [cfHandle, setCfHandle] = useState(user.handles?.codeforces || '');
+  // Initialize state with user data (safe access)
+  const [editName, setEditName] = useState(user?.username || '');
+  const [lcHandle, setLcHandle] = useState(user?.handles?.leetcode || '');
+  const [cfHandle, setCfHandle] = useState(user?.handles?.codeforces || '');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Combine History
   const combinedHistory = useMemo(() => {
+    if (!user) return [];
     const historyMap = {};
     
-    // Helper to merge
     const merge = (hist) => {
       if (!hist) return;
       hist.forEach(entry => {
@@ -183,7 +180,6 @@ const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
     merge(user.data?.leetcode?.history);
     merge(user.data?.codeforces?.history);
 
-    // Filter by timeframe
     const now = new Date();
     const cutoff = new Date();
     if (timeframe === 'Week') cutoff.setDate(now.getDate() - 7);
@@ -199,6 +195,8 @@ const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
       .map(date => ({ date, count: historyMap[date] }));
   }, [user, timeframe]);
 
+  if (!user) return null; // Safe to return null after hooks if user is missing
+
   const saveProfile = async () => {
     setIsSyncing(true);
     const updates = { 
@@ -207,7 +205,6 @@ const ProfileView = ({ user, onBack, onUpdateUser, onDeleteUser }) => {
       data: { ...user.data }
     };
 
-    // Auto-sync if handles changed or added
     if (updates.handles.leetcode && updates.handles.leetcode !== user.handles?.leetcode) {
       const data = await fetchLeetCodeData(updates.handles.leetcode);
       if (data) updates.data.leetcode = data;
@@ -381,7 +378,7 @@ export default function App() {
   // Initialize state structure
   const [users, setUsers] = useState(() => {
     try {
-      const saved = localStorage.getItem('code_rivals_users_v2'); // Changed key to force reset structure
+      const saved = localStorage.getItem('code_rivals_users_v2'); 
       return saved ? JSON.parse(saved) : [];
     } catch (e) { return []; }
   });
@@ -410,7 +407,6 @@ export default function App() {
       data: {}
     };
 
-    // Initial Fetch
     if (userObj.handles.leetcode) {
       userObj.data.leetcode = await fetchLeetCodeData(userObj.handles.leetcode);
     }
@@ -428,20 +424,21 @@ export default function App() {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
   };
 
+  const deleteUser = (id) => {
+    setUsers(users.filter(u => u.id !== id));
+    setActiveView('dashboard');
+  };
+
   const calculateWeeklyScore = (user) => {
     let score = 0;
-    
-    // Helper to sum weekly
     const sumWeekly = (history) => {
       if (!history) return 0;
       return history
         .filter(h => isDateInCurrentWeek(h.date))
         .reduce((acc, curr) => acc + curr.count, 0);
     };
-
     score += sumWeekly(user.data?.leetcode?.history);
     score += sumWeekly(user.data?.codeforces?.history);
-    
     return score;
   };
 
@@ -451,6 +448,9 @@ export default function App() {
       weeklyScore: calculateWeeklyScore(user)
     })).sort((a, b) => b.weeklyScore - a.weeklyScore);
   }, [users]);
+
+  // Resolve user before render to prevent hook violation
+  const selectedUser = users.find(u => u.id === selectedUserId);
 
   return (
     <div className={`min-h-screen transition-all duration-500 font-sans ${darkMode ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
@@ -583,12 +583,20 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <ProfileView 
-            user={users.find(u => u.id === selectedUserId)} 
-            onBack={() => setActiveView('dashboard')} 
-            onUpdateUser={updateUser}
-            onDeleteUser={deleteUser}
-          />
+          selectedUser ? (
+            <ProfileView 
+              user={selectedUser} 
+              onBack={() => setActiveView('dashboard')} 
+              onUpdateUser={updateUser}
+              onDeleteUser={deleteUser}
+            />
+          ) : (
+             <div className="p-12 text-center text-slate-500">
+                <AlertCircle className="mx-auto mb-2 text-slate-400" />
+                User not found. 
+                <button onClick={() => setActiveView('dashboard')} className="text-emerald-500 font-bold ml-1 hover:underline">Go Back</button>
+             </div>
+          )
         )}
       </main>
     </div>
